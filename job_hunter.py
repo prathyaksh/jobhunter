@@ -25,7 +25,7 @@ CONFIG = {
     # 2. SCORING LOGIC (The "Fit Finder")
     # CORE SKILLS (+2 Points): The key is the label, the list is the synonyms.
     "core_skills": {
-        "GCP": ["gcp", "google cloud", "anthos", "compute engine", "gke", "cloud run"],
+        "GCP": ["gcp", "google cloud", "cloud sql", "cloud storage", "cloud composer", "cloud run", "Load Balancer", "IAM"],
         "Terraform": ["terraform", "iac", "infrastructure as code", "terragrunt"],
         "CI/CD": ["ci/cd", "jenkins", "gitlab ci", "github actions", "pipelines", "argo"],
         "SRE": ["sre", "site reliability", "reliability", "slo", "sli"],
@@ -42,7 +42,7 @@ CONFIG = {
     # AVOID SKILLS (-5 Points): The "Red Flags".
     "avoid_skills": [
         "java developer", "c++", "expert coding", "compiler design", 
-        "algorithm expert", "leetcode", "architect kubernetes"
+        "algorithm expert", "leetcode"
     ],
     
     # STALENESS FILTERS (Job rejection keywords)
