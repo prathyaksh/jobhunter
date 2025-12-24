@@ -1,6 +1,7 @@
 name: Job Hunter Bot
 
 on:
+  push:
   schedule:
     # Runs at 03:30 UTC every day (which is 9:00 AM IST)
     - cron: '30 3 * * *'
