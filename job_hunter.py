@@ -19,7 +19,7 @@ CONFIG = {
     # 1. SEARCH SETTINGS
     "location": ["Hyderabad", "Banglore", "mumbai", "pune"],
     # Synonyms for "SRE" to ensure we catch everything
-    "role_queries": ["SRE", "DevOps", "Platform Engineer", "Site Reliability"],
+    "role_queries": ["SRE", "DevOps", "Platform Engineer", "Site Reliability", "Software engineer"],
     "max_results_per_query": 10, 
 
     # 2. SCORING LOGIC (The "Fit Finder")
