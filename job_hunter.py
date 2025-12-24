@@ -71,20 +71,39 @@ def save_history(history_set):
 #   MODULE: SEARCH ENGINE (DuckDuckGo)
 # ==============================================================================
 def find_jobs():
-    print(f"🕵️  Searching for jobs in {CONFIG['location']}...")
+    locations = CONFIG['location']
+    # Safety check: If user provided a single string, wrap it in a list
+    if isinstance(locations, str):
+        locations = [locations]
+        
+    print(f"🕵️  Searching for jobs in {locations}...")
     links = set()
     
-    for role in CONFIG["role_queries"]:
-        # Search mainly for Greenhouse and Lever as they are easy to parse
-        query = f'site:boards.greenhouse.io OR site:jobs.lever.co "{CONFIG["location"]}" "{role}"'
-        try:
-            results = DDGS().text(query, max_results=CONFIG["max_results_per_query"])
-            if results:
-                for r in results:
-                    links.add(r['href'])
-            time.sleep(1) # Be polite to the search engine
-        except Exception as e:
-            print(f"⚠️ Search warning for {role}: {e}")
+    # We loop through EVERY Location and EVERY Role
+    for location in locations:
+        for role in CONFIG["role_queries"]:
+            # Simple, clean query for each combination
+            # Example: site:boards.greenhouse.io "Hyderabad" "SRE"
+            query = f'site:boards.greenhouse.io OR site:jobs.lever.co "{location}" "{role}"'
+            
+            print(f"   -> Querying: {location} + {role}...")
+            
+            try:
+                # We use the 'text' method which is standard for the installed version
+                results = DDGS().text(query, max_results=CONFIG["max_results_per_query"])
+                
+                if results:
+                    count = 0
+                    for r in results:
+                        links.add(r['href'])
+                        count += 1
+                    print(f"      ✅ Found {count} links.")
+                else:
+                    print(f"      ⚠️ No results found.")
+                
+                time.sleep(1) # Sleep to avoid rate limits
+            except Exception as e:
+                print(f"      ❌ Search Error: {e}")
             
     return list(links)
 
