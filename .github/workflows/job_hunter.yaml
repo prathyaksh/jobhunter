@@ -39,6 +39,12 @@ jobs:
         run: |
           git config user.name "JobBot"
           git config user.email "bot@github.com"
-          git add job_history.json
-          git commit -m "Update job history [skip ci]" || echo "No changes to save"
-          git push
+          
+          # Check if file exists before adding
+          if [ -f job_history.json ]; then
+            git add job_history.json
+            git commit -m "Update job history [skip ci]" || echo "No changes to save"
+            git push
+          else
+            echo "⚠️ No job_history.json found. Script likely found no new jobs or exited early."
+          fi
