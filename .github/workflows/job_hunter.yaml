@@ -1,0 +1,43 @@
+name: Job Hunter Bot
+
+on:
+  schedule:
+    # Runs at 03:30 UTC every day (which is 9:00 AM IST)
+    - cron: '30 3 * * *'
+  workflow_dispatch: 
+    # This enables the "Run" button on your Mobile App
+
+permissions:
+  contents: write # Needed to save the history.json file
+
+jobs:
+  run_hunter:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Libraries
+        run: |
+          pip install requests beautifulsoup4 duckduckgo-search
+
+      - name: Run The Bot
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: python job_hunter.py
+
+      - name: Save Job History (Deduplication)
+        run: |
+          git config user.name "JobBot"
+          git config user.email "bot@github.com"
+          git add job_history.json
+          git commit -m "Update job history [skip ci]" || echo "No changes to save"
+          git push
