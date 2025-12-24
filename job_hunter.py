@@ -13,40 +13,37 @@ from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 
 # ==============================================================================
-#   CONFIGURABLE SECTION (The User Interface)
+#   CONFIGURABLE SECTION (Safe Mode)
 # ==============================================================================
 CONFIG = {
     # 1. SEARCH SETTINGS
-    "location": ["Hyderabad", "Banglore", "mumbai", "pune"],
+    # We combine locations into one query to save time & API calls
+    "locations": ["Hyderabad", "Bangalore", "Pune", "Remote", "India"],
+    
     # Synonyms for "SRE" to ensure we catch everything
-    "role_queries": ["SRE", "DevOps", "Platform Engineer", "Site Reliability", "Software engineer"],
+    "role_queries": ["SRE", "DevOps", "Platform Engineer", "Site Reliability", "Cloud Engineer"],
     "max_results_per_query": 10, 
 
-    # 2. SCORING LOGIC (The "Fit Finder")
+    # 2. SCORING LOGIC (The "Safe Mode" - No Negatives)
     # CORE SKILLS (+2 Points): The key is the label, the list is the synonyms.
     "core_skills": {
-        "GCP": ["gcp", "google cloud", "cloud sql", "cloud storage", "cloud composer", "cloud run", "Load Balancer", "IAM"],
+        "GCP": ["gcp", "google cloud", "anthos", "compute engine", "gke", "cloud run", "iam"],
         "Terraform": ["terraform", "iac", "infrastructure as code", "terragrunt"],
         "CI/CD": ["ci/cd", "jenkins", "gitlab ci", "github actions", "pipelines", "argo"],
         "SRE": ["sre", "site reliability", "reliability", "slo", "sli"],
         "DevOps": ["devops", "platform", "cloud engineer"]
     },
 
-    # NEUTRAL SKILLS (0 Points): Safe to have.
-    "neutral_skills": [
-        "python", "bash", "shell", "scripting", "docker", "containers", 
-        "monitoring", "datadog", "prometheus", "grafana", "linux", 
-        "kubernetes", "k8s", "ansible" 
-    ],
-
-    # AVOID SKILLS (-5 Points): The "Red Flags".
-    "avoid_skills": [
+    # WARNING SKILLS (0 Points - Just Tagging): 
+    # These will NOT lower the score, but will appear in the "Warnings" column.
+    "warning_skills": [
         "java developer", "c++", "expert coding", "compiler design", 
-        "algorithm expert", "leetcode"
+        "algorithm expert", "leetcode", "night shift"
     ],
     
     # STALENESS FILTERS (Job rejection keywords)
-    "stale_keywords": ["job is closed", "position filled", "role is no longer available", "archive"]
+    # Only reject if we are 100% sure it's closed.
+    "stale_keywords": ["job is closed", "position filled", "role is no longer available"]
 }
 
 HISTORY_FILE = "job_history.json"
@@ -58,7 +55,7 @@ def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, 'r') as f:
-                return set(json.load(f)) # Use set for fast lookup
+                return set(json.load(f))
         except:
             return set()
     return set()
@@ -68,30 +65,32 @@ def save_history(history_set):
         json.dump(list(history_set), f, indent=2)
 
 # ==============================================================================
-#   MODULE: SEARCH ENGINE (DuckDuckGo)
+#   MODULE: SEARCH ENGINE (Updated for Multiple Portals)
 # ==============================================================================
 def find_jobs():
-    locations = CONFIG['location']
-    # Safety check: If user provided a single string, wrap it in a list
-    if isinstance(locations, str):
-        locations = [locations]
-        
-    print(f"🕵️  Searching for jobs in {locations}...")
+    # 1. Build the Location String: ("Hyderabad" OR "Bangalore" ...)
+    loc_str = " OR ".join([f'"{l}"' for l in CONFIG['locations']])
+    location_query = f"({loc_str})"
+    
+    # 2. Define the Target Sites (All 4 domains)
+    sites = [
+        "site:boards.greenhouse.io", 
+        "site:job-boards.greenhouse.io", 
+        "site:jobs.lever.co", 
+        "site:jobs.ashbyhq.com"
+    ]
+    
+    print(f"🕵️  Searching for jobs in {CONFIG['locations']}...")
     links = set()
     
-    # We loop through EVERY Location and EVERY Role
-    for location in locations:
-        for role in CONFIG["role_queries"]:
-            # Simple, clean query for each combination
-            # Example: site:boards.greenhouse.io "Hyderabad" "SRE"
-            query = f'site:boards.greenhouse.io OR site:jobs.lever.co "{location}" "{role}"'
-            
-            print(f"   -> Querying: {location} + {role}...")
+    for role in CONFIG["role_queries"]:
+        for site in sites:
+            # Combined Query: site:greenhouse.io ("Hyderabad" OR "Bangalore") "SRE"
+            query = f'{site} {location_query} "{role}"'
+            print(f"   -> Querying: {site} + {role}...")
             
             try:
-                # We use the 'text' method which is standard for the installed version
                 results = DDGS().text(query, max_results=CONFIG["max_results_per_query"])
-                
                 if results:
                     count = 0
                     for r in results:
@@ -101,39 +100,36 @@ def find_jobs():
                 else:
                     print(f"      ⚠️ No results found.")
                 
-                time.sleep(1) # Sleep to avoid rate limits
+                time.sleep(1.5) # Sleep to be polite
             except Exception as e:
                 print(f"      ❌ Search Error: {e}")
             
     return list(links)
 
 # ==============================================================================
-#   MODULE: ANALYZER (Weighted Scoring)
+#   MODULE: ANALYZER (Safe Mode)
 # ==============================================================================
 def analyze_job(url):
     try:
-        # User-Agent to look like a real browser
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200: return None
 
         soup = BeautifulSoup(response.text, 'html.parser')
-        # Get text and clean it
         for script in soup(["script", "style"]): script.extract()
         text = soup.get_text(" ", strip=True).lower()
         title = soup.title.string if soup.title else "Unknown Role"
 
         # 1. Staleness Check
         if any(k in text for k in CONFIG["stale_keywords"]):
-            return None # Job is closed
+            return None 
 
-        # 2. Scoring
         score = 0
         matches = []
-        red_flags = []
+        warnings = []
         missing = []
 
-        # Check Core Skills (+2)
+        # 2. Positive Scoring (+2)
         for label, keywords in CONFIG["core_skills"].items():
             if any(k in text for k in keywords):
                 score += 2
@@ -141,20 +137,18 @@ def analyze_job(url):
             else:
                 missing.append(label)
 
-        # Check Avoid Skills (-5) - Safety check if list is empty
-        if CONFIG["avoid_skills"]:
-            for bad in CONFIG["avoid_skills"]:
-                if bad in text:
-                    score -= 5
-                    red_flags.append(bad)
+        # 3. Warning Check (0 Points - Just Tagging)
+        for bad in CONFIG["warning_skills"]:
+            if bad in text:
+                warnings.append(bad)
 
         return {
             "Company": title.split("-")[0].strip() if "-" in title else "Unknown",
             "Job Title": title,
-            "Location": CONFIG["location"],
+            "Location": "India (Check Link)", # Since we search multiple cities, we generalize
             "Match Score": score,
             "Why? (Matches)": ", ".join(matches),
-            "Red Flags": ", ".join(red_flags),
+            "Warnings": ", ".join(warnings),
             "Missing Keywords": ", ".join(missing),
             "URL": url
         }
@@ -178,26 +172,22 @@ def send_email(job_list, filename):
     msg['To'] = recipient
     msg['Subject'] = f"🚀 JobBot: {len(job_list)} New Matches ({datetime.now().strftime('%Y-%m-%d')})"
 
-    # Email Body
     top_job = job_list[0]
     body = f"""
     Hello!
     
-    I found {len(job_list)} new job openings in {CONFIG['location']} today.
+    I found {len(job_list)} potential jobs today.
     
     🏆 TOP MATCH:
     Role: {top_job['Job Title']}
     Score: {top_job['Match Score']}
     Matches: {top_job['Why? (Matches)']}
+    Warnings: {top_job['Warnings'] if top_job['Warnings'] else "None"}
     
-    The full list is attached as a CSV file.
-    
-    Happy Hunting!
-    - JobBot
+    Full list attached.
     """
     msg.attach(MIMEText(body, 'plain'))
 
-    # Attach CSV
     with open(filename, "rb") as f:
         part = MIMEApplication(f.read(), Name=filename)
         part['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -213,18 +203,13 @@ def send_email(job_list, filename):
         print(f"❌ Email Failed: {e}")
 
 # ==============================================================================
-#   MAIN EXECUTION
+#   MAIN
 # ==============================================================================
 def main():
-    print("🤖 JobBot Started...")
-    
-    # Load History
+    print("🤖 JobBot Started (Safe Mode)...")
     history = load_history()
-    
-    # Find Jobs
     raw_links = find_jobs()
     
-    # Deduplicate (Ignore jobs we've already seen)
     new_links = [link for link in raw_links if link not in history]
     print(f"🔎 Found {len(raw_links)} total links. {len(new_links)} are new.")
 
@@ -233,26 +218,20 @@ def main():
         return
 
     analyzed_jobs = []
-    
-    # Analyze
     print("📝 Analyzing contents...")
+    
     for link in new_links:
         data = analyze_job(link)
-        
-        # We add to history regardless of score so we don't re-scan bad jobs
         history.add(link) 
         
-        # Only keep jobs with positive score
+        # In Safe Mode, we keep EVERYTHING with a score > 0
         if data and data['Match Score'] > 0:
             analyzed_jobs.append(data)
         
-        time.sleep(random.uniform(0.5, 1.5)) # Random delay
+        time.sleep(1)
 
-    # Report & Save
     if analyzed_jobs:
-        # Sort High to Low
         analyzed_jobs.sort(key=lambda x: x["Match Score"], reverse=True)
-        
         filename = f"jobs_{datetime.now().strftime('%Y%m%d')}.csv"
         keys = analyzed_jobs[0].keys()
         
@@ -264,9 +243,8 @@ def main():
         print(f"✅ Generated report: {filename}")
         send_email(analyzed_jobs, filename)
     else:
-        print("❌ New jobs were found, but none matched your requirements.")
+        print("❌ No matching jobs found.")
 
-    # Save State
     save_history(history)
 
 if __name__ == "__main__":
