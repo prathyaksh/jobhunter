@@ -2,9 +2,9 @@ name: Job Hunter Bot
 
 on:
   push:
-  schedule:
+  #schedule:
     # Runs at 03:30 UTC every day (which is 9:00 AM IST)
-    - cron: '30 3 * * *'
+    #- cron: '30 3 * * *'
   workflow_dispatch: 
     # This enables the "Run" button on your Mobile App
 
